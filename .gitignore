@@ -108,3 +108,4 @@ venv.bak/
 
 # idea
 .idea*
+example/weida_backtest_results/*.pkl

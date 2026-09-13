@@ -1,0 +1,36 @@
+{
+  "instrument": "TX near-month",
+  "session": "day (gap vs prior night close)",
+  "period": {
+    "start": "2022-03-01",
+    "end": "2025-12-31",
+    "days": 937
+  },
+  "point_value_twd": 200,
+  "contracts": 1,
+  "formula01": {
+    "gap_vs_avg_amp": 0.35,
+    "shadow_range_max": 80.0,
+    "stop_loss": 40.0,
+    "take_profit_amp_mult": 1.2
+  },
+  "formula02": {
+    "retrace_max": 30.0,
+    "stop_loss": 40.0,
+    "final_tp_amp_mult": 1.0
+  },
+  "formula03": {
+    "macd_fast": 12,
+    "macd_slow": 26,
+    "macd_signal": 9,
+    "protect_no_trend": 50.0,
+    "protect_with_trend": 150.0
+  },
+  "limitations": [
+    "講義空白參數以預設值填入，非課程官方數字",
+    "無分K/逐筆，路徑與13:30出場為日OHLC近似",
+    "公式01影線組M1-m1因無分K而省略（避免用當日高低造成前瞻偏差）",
+    "公式02關鍵線以前日收盤代理「最多穿越價」",
+    "公式03以週/日MACD代理大小分時共振，非波浪理論完整實作"
+  ]
+}
