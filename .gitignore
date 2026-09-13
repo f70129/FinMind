@@ -110,3 +110,4 @@ venv.bak/
 .idea*
 example/weida_backtest_results/*.pkl
 example/weida_backtest_results/taiex_5s/
+example/weida_backtest_results/**/bars_1min.pkl
