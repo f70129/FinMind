@@ -4,11 +4,9 @@
 資料：加權指數每5秒（日盤 09:00–13:30）重採為 1/5/30 分K，作為台指期代理。
 FinMind 期貨逐筆需付費；加權與近月台指高度相關。
 
-使用者參數：
+使用者參數（可改 ExitParams）：
 - 週期：30分 / 5分 / 1分K
-- 停損：120 點
-- 第1口停利：480 點
-- 第2口停利：600 點（進場 2 口，分批出場）
+- 預設出場：停損 50、停利 150（1 口）
 """
 
 from __future__ import annotations
@@ -24,17 +22,17 @@ import pandas as pd
 
 RESULTS = Path(__file__).resolve().parent / "weida_backtest_results"
 SEC5_DIR = RESULTS / "taiex_5s"
-OUT = RESULTS / "intraday_v2"
+OUT = RESULTS / "intraday_v3_sl50_tp150"
 POINT_VALUE = 200
 COST_PER_LOT = 2.0
 
 
 @dataclass
 class ExitParams:
-    stop_loss: float = 120.0
-    tp1: float = 480.0
-    tp2: float = 600.0
-    lots: int = 2
+    stop_loss: float = 50.0
+    tp1: float = 150.0
+    tp2: float = 150.0  # 單一口標時與 tp1 相同
+    lots: int = 1
 
 
 def load_ohlc(rule: str) -> pd.DataFrame:
@@ -66,7 +64,7 @@ def simulate_two_lot(
     ep: ExitParams,
     entry_i: int,
 ) -> Tuple[float, str, int]:
-    """2口：-120全停；+480平1口；+600平第2口；13:25後市價平。同棒停損優先。"""
+    """停損優先；達 tp1 平1口、達 tp2 平剩餘；13:25後市價平。"""
     lots_left = ep.lots
     pnl = 0.0
     tp1_done = False
@@ -86,14 +84,20 @@ def simulate_two_lot(
             break
 
         if (not tp1_done) and fav >= ep.tp1 and lots_left > 0:
+            # 單一口或 tp1==tp2：一次平完剩餘
+            if ep.lots == 1 or ep.tp1 == ep.tp2:
+                pnl += lots_left * ep.tp1
+                lots_left = 0
+                reason = "tp"
+                break
             pnl += ep.tp1
             lots_left -= 1
             tp1_done = True
             reason = "tp1"
 
         if tp1_done and fav >= ep.tp2 and lots_left > 0:
-            pnl += ep.tp2
-            lots_left -= 1
+            pnl += lots_left * ep.tp2
+            lots_left = 0
             reason = "tp2"
             break
 
@@ -301,27 +305,29 @@ def summarize(tr: pd.DataFrame, name: str) -> Dict:
         "strategy": name,
         "trades": int(len(tr)),
         "win_rate": float((pnl > 0).mean()),
-        "total_pnl_pts_2lots": float(pnl.sum()),
-        "avg_pnl_pts_2lots": float(pnl.mean()),
+        "total_pnl_pts": float(pnl.sum()),
+        "avg_pnl_pts": float(pnl.mean()),
         "total_pnl_twd": float(pnl.sum() * POINT_VALUE),
         "max_dd_pts": float(dd.min()) if len(dd) else 0.0,
         "profit_factor": (gp / gl) if gl > 0 else None,
-        "tp2_rate": float((tr["reason"] == "tp2").mean()),
-        "tp1_only_rate": float((tr["reason"] == "tp1").mean()),
+        "tp_rate": float(tr["reason"].isin(["tp", "tp1", "tp2"]).mean()),
         "stop_rate": float((tr["reason"] == "stop").mean()),
+        "time_rate": float(tr["reason"].astype(str).str.startswith("time").mean()),
     }
 
 
-def plot_equity(trades_map: Dict[str, pd.DataFrame], path: Path) -> None:
+def plot_equity(
+    trades_map: Dict[str, pd.DataFrame], path: Path, title: str
+) -> None:
     plt.figure(figsize=(11, 6))
     for name, tr in trades_map.items():
         if tr is None or len(tr) == 0:
             continue
         plt.plot(pd.to_datetime(tr["date"]), tr["pnl_pts"].cumsum(), label=name, lw=1.8)
     plt.axhline(0, color="#888", lw=0.8)
-    plt.title("Weida intraday approx — SL120 / TP480+600 (2 lots, TAIEX proxy)")
+    plt.title(title)
     plt.xlabel("Date")
-    plt.ylabel("Cumulative PnL (pts, 2 lots combined)")
+    plt.ylabel("Cumulative PnL (points)")
     plt.legend()
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
@@ -333,10 +339,19 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     ep = ExitParams()
 
-    print("Resampling ...")
-    bars_1 = load_ohlc("1min")
-    bars_5 = load_ohlc("5min")
-    bars_30 = load_ohlc("30min")
+    cache_5 = RESULTS / "intraday_v2" / "bars_5min.pkl"
+    cache_30 = RESULTS / "intraday_v2" / "bars_30min.pkl"
+    if cache_5.exists() and cache_30.exists():
+        print("Loading cached 5/30min bars ...")
+        bars_5 = pd.read_pickle(cache_5)
+        bars_30 = pd.read_pickle(cache_30)
+        print("Resampling 1min ...")
+        bars_1 = load_ohlc("1min")
+    else:
+        print("Resampling ...")
+        bars_1 = load_ohlc("1min")
+        bars_5 = load_ohlc("5min")
+        bars_30 = load_ohlc("30min")
     bars_5.to_pickle(OUT / "bars_5min.pkl")
     bars_30.to_pickle(OUT / "bars_30min.pkl")
     print("days", bars_5["session_date"].nunique(), "5m bars", len(bars_5))
@@ -382,6 +397,7 @@ def main() -> None:
     plot_equity(
         {"01_5m": t1, "01_30m": t1_30, "02_5m": t2, "03_30+5": t3},
         OUT / "equity_curves.png",
+        title=f"Weida intraday — SL{ep.stop_loss:.0f} / TP{ep.tp1:.0f} (1 lot, TAIEX proxy)",
     )
     print(json.dumps(params, ensure_ascii=False, indent=2))
     print(summary.to_string(index=False))
