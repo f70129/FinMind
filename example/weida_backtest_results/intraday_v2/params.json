@@ -1,0 +1,18 @@
+{
+  "proxy": "TAIEX 5-second day session → 1/5/30min OHLC",
+  "period": {
+    "start": "2024-01-02 09:00:00",
+    "end": "2025-05-21 13:30:00",
+    "days": 331
+  },
+  "exit": {
+    "stop_loss": 120.0,
+    "tp1": 480.0,
+    "tp2": 600.0,
+    "lots": 2
+  },
+  "money": {
+    "point_value_twd": 200,
+    "cost_per_lot_pts": 2.0
+  }
+}
